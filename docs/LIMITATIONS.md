@@ -6,7 +6,9 @@
 - BendLink/Transition approximations are documented separately in `APPROXIMATIONS.md`;
   they do not inherit the baseline's Python bit-parity claim.
 - No binary HKX reader/writer, runtime operator graph, bone transform composition,
-  animated pins/colliders, native wind, or display-mesh deformation.
+  automatic HKX animation binding, native wind, or display-mesh deformation.
+- Explicit per-step reference/pin/capsule updates are available through
+  `SetFrameInputs`; decoding or generating those bindings remains the caller's job.
 - Public inputs are explicit; reference vertices currently index rest particles.
   Inter-domain dependencies are not evaluated.
 - The delivered Python parity baseline intentionally retains known issues:

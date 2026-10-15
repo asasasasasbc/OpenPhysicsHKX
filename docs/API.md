@@ -34,6 +34,10 @@ session.Reset();
 - Mass and inverse mass are explicit independent inputs; neither is inferred or normalized.
 - Input arrays, options and returned positions are copied. Sessions own separate states.
 - `Step(n)` advances persistent state; `Reset()` restores the construction snapshot.
+- `SetFrameInputs(...)` atomically copies explicit reference positions, per-particle
+  normals, fixed-particle targets and capsules for subsequent steps without
+  rebuilding kernels or discarding dynamic history. Buffer dimensions/counts
+  remain fixed. A rejected batch applies nothing; Reset restores original inputs.
 - Session operations are serialized. They are synchronous: a GUI should schedule
   work off the UI thread, with cancellation/lifecycle handling in its adapter.
 - A failed/nonfinite solve faults the session. `Reset()` is required to continue;
@@ -77,3 +81,23 @@ comparison settings, not universal preview defaults.
 Future integration should translate the current in-memory `ClothDocument` into
 these explicit inputs, then adapt double positions to the existing preview frame.
 Keep native HCT as a separate backend. No Editor files are changed by this project.
+
+## Live mapped inputs
+
+```csharp
+session.SetFrameInputs(new[] {
+    new ClothFrameInput {
+        ClothId = 0,
+        FixedTargets = new Dictionary<int, double[]> {
+            { 0, new[] { 0.0, 1.15, 0.0 } }
+        }
+    }
+});
+session.Step();
+```
+
+The example uses `System.Collections.Generic.Dictionary`.
+
+The caller must supply correct bindings and dependency order. This API does not
+decode bone weights, reconstruct compact meshes, execute an HKX operator graph,
+or automatically make the current Editor backend animation-capable.

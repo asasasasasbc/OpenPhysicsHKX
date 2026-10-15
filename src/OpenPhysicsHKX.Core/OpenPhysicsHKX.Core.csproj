@@ -17,6 +17,7 @@
     <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Numerics" />
     <Compile Include="AssemblyInfo.cs" />
     <Compile Include="ClothDefinition.cs" />
+    <Compile Include="ClothFrameInput.cs" />
     <Compile Include="ClothSession.cs" />
     <Compile Include="ApproximateKernels.cs" />
     <Compile Include="Imported\LegacyKernels.cs" />

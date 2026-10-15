@@ -14,7 +14,7 @@ namespace OpenPhysicsHKX.Internal
         {
             return name == "hclBendLinkConstraintSet" || name == "hclTransitionConstraintSet";
         }
-        internal static Action<double> Build(ConstraintDefinition def, Cloth c, double[][] reference, ApproximationClock clock)
+        internal static Action<double> Build(ConstraintDefinition def, Cloth c, Func<int,double[]> reference, ApproximationClock clock)
         {
             Func<string, int> col = name => Array.IndexOf(def.Fields, name);
             if (def.ClassName == "hclBendLinkConstraintSet")
@@ -60,7 +60,7 @@ namespace OpenPhysicsHKX.Internal
                         double blend=elapsed<0?0:period==0?1:Math.Max(0,Math.Min(1,elapsed/period));
                         double release=def.TransitionToAnimation?1-blend:blend;
                         if (release>=1) continue; // fully released simulation, not a permanent leash
-                        var target=reference[(int)r[ri]];
+                        var target=reference((int)r[ri]);
                         if (release<=0)
                         {
                             for (int k=0;k<3;k++) { c.P[i][k]=target[k];c.Prev[i][k]=target[k]; }

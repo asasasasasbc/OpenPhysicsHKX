@@ -123,6 +123,7 @@ internal static class Program
             var coreRefs = typeof(ClothSession).Assembly.GetReferencedAssemblies().Select(x => x.Name).ToArray();
             Check(!coreRefs.Contains("System.Web.Extensions") && !coreRefs.Contains("System.Windows.Forms"), "Core has no JSON serializer or GUI dependency");
             ApproximationChecks();
+            FrameInputChecks();
             Console.WriteLine("ALL PASS: " + passed); return 0;
         }
         catch (Exception e) { Console.Error.WriteLine(e); return 1; }
@@ -172,5 +173,36 @@ internal static class Program
         var external=new ClothSession(new[]{ext},opt);external.Step();Check(external.GetPositions()[0][1][0]==3,"Transition accepts explicit external reference buffer");
         var invalid=bend(2);invalid.Constraints[0].Records[0][2]=1.5;
         Reject<ArgumentException>(()=>new ClothSession(new[]{invalid},opt),"invalid BendLink interval rejected");
+    }
+    private static void FrameInputChecks()
+    {
+        var d=Scene();d.Constraints=new ConstraintDefinition[0];d.Gravity=new[]{0.0,0.0,0.0};d.Damping=0;d.Substeps=1;d.Iterations=1;
+        d.Positions=new[]{new[]{0.0,0.0,0.0},new[]{1.2,0.0,0.0}};
+        var s=new ClothSession(new[]{d});s.Step();double x=s.GetPositions()[7][1][0];
+        var targets=new Dictionary<int,double[]> {{0,new[]{0.0,0.15,0.0}}};
+        s.SetFrameInputs(new[]{new ClothFrameInput {ClothId=7,FixedTargets=targets}});targets[0][1]=100;
+        Check(s.FrameCount==1&&s.GetPositions()[7][0][1]==0,"frame inputs do not step/reset the session");
+        s.Step();Check(s.GetPositions()[7][0][1]==0.15,"moving fixed target uses owned copied data");
+        Check(Math.Abs(s.GetPositions()[7][1][0]-(x+0.2))<1e-12,"frame input preserves dynamic Verlet history");
+        var peer=Scene();peer.Id=8;var both=new ClothSession(new[]{Scene(),peer});
+        Reject<ArgumentException>(()=>both.SetFrameInputs(new[]{
+            new ClothFrameInput {ClothId=7,FixedTargets=new Dictionary<int,double[]>{{0,new[]{0.0,0.5,0.0}}}},
+            new ClothFrameInput {ClothId=8,FixedTargets=new Dictionary<int,double[]>{{1,new[]{0.0,0.5,0.0}}}}
+        }),"invalid live target rejects complete batch");
+        both.Step();Check(both.GetPositions()[7][0][1]==0,"failed frame-input batch leaves earlier cloth unchanged");
+        Reject<ArgumentException>(()=>s.SetFrameInputs(new[]{new ClothFrameInput {ClothId=999}}),"unknown frame-input cloth rejected");
+        Reject<ArgumentException>(()=>s.SetFrameInputs(new[]{new ClothFrameInput {ClothId=7,ReferencePositions=new[]{new[]{0.0,0.0,0.0}}}}),"reference buffer dimensions fixed at construction");
+        Reject<ArgumentException>(()=>s.SetFrameInputs(new[]{new ClothFrameInput {ClothId=7,ParticleNormals=new[]{new[]{double.NaN,0.0,0.0},new[]{0.0,1.0,0.0}}}}),"nonfinite frame normal rejected");
+        var transition=Scene();transition.Constraints=new[]{new ConstraintDefinition {ClassName="hclTransitionConstraintSet",TransitionToAnimation=true,ToAnimationPeriod=0,
+            Fields=new[]{"particleIndex","referenceVertex","toAnimDelay","toSimDelay","toSimMaxDistance"},Records=new[]{new[]{1.0,1.0,0.0,0.0,0.1}}}};
+        var moving=new ClothSession(new[]{transition},new SolverOptions {AllowApproximateConstraints=true});moving.Step();
+        var references=new[]{new[]{0.0,0.0,0.0},new[]{1.0,0.25,0.0}};
+        moving.SetFrameInputs(new[]{new ClothFrameInput {ClothId=7,ReferencePositions=references}});references[1][1]=100;moving.Step();
+        Check(moving.GetPositions()[7][1][1]==0.25&&moving.FrameCount==2,"Transition reads updated reference buffer without reset");
+        moving.Reset();moving.Step();Check(moving.GetPositions()[7][1][1]==0,"Reset restores original reference buffer");
+        var local=Scene();local.Constraints=new[]{new ConstraintDefinition {ClassName="hclLocalRangeConstraintSet",ApplyNormal=false,
+            Fields=new[]{"particleIndex","referenceVertex","maximumDistance","maxNormalDistance","minNormalDistance"},Records=new[]{new[]{1.0,1.0,0.0,0.0,0.0}}}};
+        var range=new ClothSession(new[]{local});range.SetFrameInputs(new[]{new ClothFrameInput {ClothId=7,ReferencePositions=new[]{new[]{0.0,0.0,0.0},new[]{2.0,0.0,0.0}}}});range.Step();
+        Check(Math.Abs(range.GetPositions()[7][1][0]-2)<1e-5,"legacy LocalRange reads live explicit reference buffer");
     }
 }

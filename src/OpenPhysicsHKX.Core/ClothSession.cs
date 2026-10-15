@@ -18,6 +18,8 @@ namespace OpenPhysicsHKX
         private long frames;
         private readonly ApproximationClock approximationClock = new ApproximationClock();
         private bool hasApproximations;
+        private Dictionary<int, double[][]> referenceBuffers = new Dictionary<int, double[][]>();
+        private Dictionary<int, double[][]> normalBuffers = new Dictionary<int, double[][]>();
 
         public long FrameCount { get { lock (gate) return frames; } }
         public bool IsFaulted { get { lock (gate) return faulted; } }
@@ -43,6 +45,8 @@ namespace OpenPhysicsHKX
             lock (gate)
             {
                 var next = new Dictionary<int, Cloth>();
+                referenceBuffers = new Dictionary<int, double[][]>();
+                normalBuffers = new Dictionary<int, double[][]>();
                 foreach (var d in definitions) next.Add(d.Id, Build(d));
                 cloths = next;
                 order = definitions.Select(d => d.Id).ToList();
@@ -94,9 +98,67 @@ namespace OpenPhysicsHKX
             }
         }
 
+        /// <summary>
+        /// Atomically validate/copy mapped frame inputs without rebuilding kernels or clearing history.
+        /// Fixed targets take effect during the next Step; reference buffers do not imply a dependency graph.
+        /// </summary>
+        public void SetFrameInputs(IEnumerable<ClothFrameInput> inputs)
+        {
+            if (inputs == null) throw new ArgumentNullException("inputs");
+            lock (gate)
+            {
+                if (faulted) throw new InvalidOperationException("Session faulted; call Reset.");
+                var snapshots = new List<ClothFrameInput>();
+                var seen = new HashSet<int>();
+                foreach (var input in inputs)
+                {
+                    if (input == null || !cloths.ContainsKey(input.ClothId) || !seen.Add(input.ClothId))
+                        throw new ArgumentException("Unknown, null or duplicate cloth frame input.");
+                    var c = cloths[input.ClothId];
+                    if (input.ReferencePositions != null)
+                        ValidateRows(input.ReferencePositions, referenceBuffers[input.ClothId].Length, 3, "frame references");
+                    if (input.ParticleNormals != null)
+                        ValidateRows(input.ParticleNormals, c.N, 3, "frame normals");
+                    if (input.Capsules != null)
+                    {
+                        ValidateRows(input.Capsules, c.Collidables.Count, 8, "frame capsules");
+                        if (input.Capsules.Any(p => p[6] < 0 || p[7] < 0)) throw new ArgumentException("Negative frame capsule radius.");
+                    }
+                    Dictionary<int, double[]> pins = null;
+                    if (input.FixedTargets != null)
+                    {
+                        pins = new Dictionary<int, double[]>();
+                        foreach (var pin in input.FixedTargets)
+                        {
+                            if (pin.Key < 0 || pin.Key >= c.N || c.InvMass[pin.Key] != 0 || pin.Value == null || pin.Value.Length != 3)
+                                throw new ArgumentException("Frame target must name an authored fixed particle and supply XYZ.");
+                            CheckFinite(pin.Value, "fixed target");
+                            pins.Add(pin.Key, (double[])pin.Value.Clone());
+                        }
+                    }
+                    snapshots.Add(new ClothFrameInput { ClothId = input.ClothId,
+                        ReferencePositions = CopyRows(input.ReferencePositions), ParticleNormals = CopyRows(input.ParticleNormals),
+                        FixedTargets = pins, Capsules = CopyRows(input.Capsules) });
+                }
+                if (snapshots.Count == 0) throw new ArgumentException("At least one frame input is required.");
+                // Nothing above mutates a live buffer; a failure cannot partially apply other cloths.
+                foreach (var input in snapshots)
+                {
+                    int id = input.ClothId;
+                    if (input.ReferencePositions != null) referenceBuffers[id] = input.ReferencePositions;
+                    if (input.ParticleNormals != null) normalBuffers[id] = input.ParticleNormals;
+                    if (input.Capsules != null) cloths[id].Collidables = input.Capsules.ToList();
+                    if (input.FixedTargets != null)
+                        foreach (var pin in input.FixedTargets) cloths[id].PinRef[pin.Key] = pin.Value;
+                }
+            }
+        }
+
         private Cloth Build(ClothDefinition d)
         {
             int n = d.RestPositions.Length;
+            referenceBuffers[d.Id] = CopyRows(d.ReferencePositions ?? d.RestPositions);
+            normalBuffers[d.Id] = CopyRows(d.ParticleNormals);
             var c = new Cloth {
                 Sim = d.Id, Name = d.Name, N = n, P0 = CopyRows(d.RestPositions).ToList(),
                 P = CopyRows(d.Positions ?? d.RestPositions).ToList(),
@@ -121,13 +183,13 @@ namespace OpenPhysicsHKX
                     {"bend_normal", def.BendNormal}, {"bend_scale", def.BendScale},
                     {"bend_max_gain", def.BendMaxGain}, {"bend_scalar", "grad"}, {"bend_nat_scale", false},
                     {"shape_type", def.Shape}, {"apply_normal", def.ApplyNormal},
-                    {"reference", new Func<int, int, double[]>((i, rv) => d.ReferencePositions == null ? c.P0[rv] : d.ReferencePositions[rv])},
+                    {"reference", new Func<int, int, double[]>((i, rv) => referenceBuffers[d.Id][rv])},
                     {"normal_bounds", "native"}
                 };
-                Func<int, double[]> normals = i => d.ParticleNormals == null ? null : d.ParticleNormals[i];
+                Func<int, double[]> normals = i => normalBuffers[d.Id] == null ? null : normalBuffers[d.Id][i];
                 var solve = Solvers.BuildSolver(def.ClassName, fields, records, c, normals, opts);
                 if (solve == null && options.AllowApproximateConstraints)
-                    solve = ApproximateKernels.Build(def, c, d.ReferencePositions ?? d.RestPositions, approximationClock);
+                    solve = ApproximateKernels.Build(def, c, i => referenceBuffers[d.Id][i], approximationClock);
                 if (solve == null) throw new NotSupportedException("Unsupported constraint: " + def.ClassName);
                 c.Sets.Add(new SetRec { Class = def.ClassName, Fields = fields, Entries = records,
                     Type = TypeId(def.ClassName), N = records.Count, ProbeIndex = c.Sets.Count, Solve = solve });
