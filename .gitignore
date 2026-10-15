@@ -1,0 +1,33 @@
+bin/
+obj/
+.vs/
+.local/
+*.user
+*.suo
+__pycache__/
+
+# Local instructions and research-only regeneration/validation tools.
+/AGENTS.md
+/tools/
+/docs/VALIDATION.md
+
+# Source-only repository: never publish compiled output, game data or captures.
+*.dll
+*.exe
+*.pdb
+*.hkx
+*.flver
+*.clm2
+*.tpf
+*.dcx
+*.zip
+*.7z
+*.log
+*.png
+*.jpg
+*.mp4
+*.wav
+.env
+.env.*
+*.pem
+*.key

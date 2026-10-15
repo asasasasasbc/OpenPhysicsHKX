@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <ProjectGuid>{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AssemblyName>OpenPhysicsHKX.Core</AssemblyName>
+    <RootNamespace>OpenPhysicsHKX</RootNamespace>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <DebugType>pdbonly</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Numerics" />
+    <Compile Include="AssemblyInfo.cs" />
+    <Compile Include="ClothDefinition.cs" />
+    <Compile Include="ClothSession.cs" />
+    <Compile Include="ApproximateKernels.cs" />
+    <Compile Include="Imported\LegacyKernels.cs" />
+    <Compile Include="Imported\PyNum.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <ProjectGuid>{244C871D-9A1F-4BD0-B26A-99E3094683D9}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>OpenPhysicsHKX.Cli</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <DebugType>pdbonly</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Web.Extensions" />
+    <Compile Include="Imported\ClothSolveCs.cs" />
+    <Compile Include="Program.cs" />
+    <ProjectReference Include="..\OpenPhysicsHKX.Core\OpenPhysicsHKX.Core.csproj">
+      <Project>{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}</Project><Name>OpenPhysicsHKX.Core</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

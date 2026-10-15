@@ -1,0 +1,11 @@
+{
+  "sourceSha256": {
+    "ClothSolveCs.cs": "6c5fe92c4e5cc477b59acec22d3d9ad142091a05e020392be0d8f99ee4670257",
+    "PyNum.cs": "6fe9ef6a4caa2d2ab8f17c17d47ea2fa476d4d78cad977aec2a1133628d79972"
+  },
+  "generatedSha256": {
+    "src/OpenPhysicsHKX.Core/Imported/LegacyKernels.cs": "b89152c8a7ab2751a6b240ffc99a969a556c3a0d715aa6fe662c53d21105bc32",
+    "src/OpenPhysicsHKX.Core/Imported/PyNum.cs": "4a3ed8889b67167c2306ea648eb884c5017645d78b6882eee8d05d6b81d2268e",
+    "src/OpenPhysicsHKX.Cli/Imported/ClothSolveCs.cs": "461f6fcd24b89f9924c8591eeb79c1ce38a4d406c1e9a635a369e47c1186db02"
+  }
+}

@@ -1,0 +1,69 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenPhysicsHKX.Core", "src\OpenPhysicsHKX.Core\OpenPhysicsHKX.Core.csproj", "{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenPhysicsHKX.Cli", "src\OpenPhysicsHKX.Cli\OpenPhysicsHKX.Cli.csproj", "{244C871D-9A1F-4BD0-B26A-99E3094683D9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenPhysicsHKX.Tests", "tests\OpenPhysicsHKX.Tests\OpenPhysicsHKX.Tests.csproj", "{714E09DD-F27A-4C19-A705-49DB46035B32}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Debug|x64.Build.0 = Debug|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Debug|x86.Build.0 = Debug|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Release|x64.ActiveCfg = Release|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Release|x64.Build.0 = Release|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Release|x86.ActiveCfg = Release|Any CPU
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F}.Release|x86.Build.0 = Release|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Debug|x64.Build.0 = Debug|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Debug|x86.Build.0 = Debug|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Release|x64.ActiveCfg = Release|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Release|x64.Build.0 = Release|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Release|x86.ActiveCfg = Release|Any CPU
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9}.Release|x86.Build.0 = Release|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Debug|x64.Build.0 = Debug|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Debug|x86.Build.0 = Debug|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Release|x64.ActiveCfg = Release|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Release|x64.Build.0 = Release|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Release|x86.ActiveCfg = Release|Any CPU
+		{714E09DD-F27A-4C19-A705-49DB46035B32}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8BF6E98E-26CD-4EC4-BBF0-164687A71E9F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{244C871D-9A1F-4BD0-B26A-99E3094683D9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{714E09DD-F27A-4C19-A705-49DB46035B32} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+	EndGlobalSection
+EndGlobal
