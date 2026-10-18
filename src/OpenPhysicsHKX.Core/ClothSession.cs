@@ -19,6 +19,7 @@ namespace OpenPhysicsHKX
         private readonly ApproximationClock approximationClock = new ApproximationClock();
         private bool hasApproximations;
         private Dictionary<int, double[][]> referenceBuffers = new Dictionary<int, double[][]>();
+        private Dictionary<int, Dictionary<int, ReferenceBufferData>> referenceSets = new Dictionary<int, Dictionary<int, ReferenceBufferData>>();
         private Dictionary<int, double[][]> normalBuffers = new Dictionary<int, double[][]>();
 
         public long FrameCount { get { lock (gate) return frames; } }
@@ -33,7 +34,7 @@ namespace OpenPhysicsHKX
             definitions = scene.Select(CopyDefinition).ToArray();
             hasApproximations = definitions.Any(d => d.Constraints.Any(c => ApproximateKernels.IsApproximate(c.ClassName)));
             if (hasApproximations && !this.options.AllowApproximateConstraints)
-                throw new NotSupportedException("BendLink/Transition require AllowApproximateConstraints=true; these are approximate kernels.");
+                throw new NotSupportedException("BendLink/Transition/VolumeMx require AllowApproximateConstraints=true; these are approximate kernels.");
             if (definitions.Length == 0) throw new ArgumentException("Scene must contain a cloth.");
             if (definitions.Select(d => d.Id).Distinct().Count() != definitions.Length)
                 throw new ArgumentException("Cloth IDs must be unique.");
@@ -46,6 +47,7 @@ namespace OpenPhysicsHKX
             {
                 var next = new Dictionary<int, Cloth>();
                 referenceBuffers = new Dictionary<int, double[][]>();
+                referenceSets = new Dictionary<int, Dictionary<int, ReferenceBufferData>>();
                 normalBuffers = new Dictionary<int, double[][]>();
                 foreach (var d in definitions) next.Add(d.Id, Build(d));
                 cloths = next;
@@ -117,6 +119,19 @@ namespace OpenPhysicsHKX
                     var c = cloths[input.ClothId];
                     if (input.ReferencePositions != null)
                         ValidateRows(input.ReferencePositions, referenceBuffers[input.ClothId].Length, 3, "frame references");
+                    Dictionary<int,ReferenceBufferData> buffers=null;
+                    if(input.ReferenceBuffers!=null)
+                    {
+                        buffers=new Dictionary<int,ReferenceBufferData>();
+                        foreach(var pair in input.ReferenceBuffers)
+                        {
+                            ReferenceBufferData current;
+                            if(pair.Value==null||!referenceSets[input.ClothId].TryGetValue(pair.Key,out current)||(pair.Key==0&&input.ReferencePositions!=null))throw new ArgumentException("Unknown, null or conflicting frame reference buffer.");
+                            ValidateRows(pair.Value.Positions,current.Positions.Length,3,"frame reference buffer");
+                            if(pair.Value.Normals!=null){if(current.Normals==null)throw new ArgumentException("Reference normal channel was not declared.");ValidateRows(pair.Value.Normals,current.Normals.Length,3,"frame reference normals");}
+                            buffers.Add(pair.Key,new ReferenceBufferData{Positions=CopyRows(pair.Value.Positions),Normals=CopyRows(pair.Value.Normals??current.Normals)});
+                        }
+                    }
                     if (input.ParticleNormals != null)
                         ValidateRows(input.ParticleNormals, c.N, 3, "frame normals");
                     if (input.Capsules != null)
@@ -138,14 +153,15 @@ namespace OpenPhysicsHKX
                     }
                     snapshots.Add(new ClothFrameInput { ClothId = input.ClothId,
                         ReferencePositions = CopyRows(input.ReferencePositions), ParticleNormals = CopyRows(input.ParticleNormals),
-                        FixedTargets = pins, Capsules = CopyRows(input.Capsules) });
+                        FixedTargets = pins, Capsules = CopyRows(input.Capsules), ReferenceBuffers=buffers });
                 }
                 if (snapshots.Count == 0) throw new ArgumentException("At least one frame input is required.");
                 // Nothing above mutates a live buffer; a failure cannot partially apply other cloths.
                 foreach (var input in snapshots)
                 {
                     int id = input.ClothId;
-                    if (input.ReferencePositions != null) referenceBuffers[id] = input.ReferencePositions;
+                    if (input.ReferencePositions != null){referenceBuffers[id] = input.ReferencePositions;referenceSets[id][0].Positions=input.ReferencePositions;}
+                    if(input.ReferenceBuffers!=null)foreach(var pair in input.ReferenceBuffers){referenceSets[id][pair.Key]=pair.Value;if(pair.Key==0)referenceBuffers[id]=pair.Value.Positions;}
                     if (input.ParticleNormals != null) normalBuffers[id] = input.ParticleNormals;
                     if (input.Capsules != null) cloths[id].Collidables = input.Capsules.ToList();
                     if (input.FixedTargets != null)
@@ -158,6 +174,9 @@ namespace OpenPhysicsHKX
         {
             int n = d.RestPositions.Length;
             referenceBuffers[d.Id] = CopyRows(d.ReferencePositions ?? d.RestPositions);
+            referenceSets[d.Id]=d.ReferenceBuffers==null?new Dictionary<int,ReferenceBufferData>():CopyReferenceBuffers(d.ReferenceBuffers);
+            if(!referenceSets[d.Id].ContainsKey(0))referenceSets[d.Id].Add(0,new ReferenceBufferData{Positions=referenceBuffers[d.Id]});
+            else referenceBuffers[d.Id]=referenceSets[d.Id][0].Positions;
             normalBuffers[d.Id] = CopyRows(d.ParticleNormals);
             var c = new Cloth {
                 Sim = d.Id, Name = d.Name, N = n, P0 = CopyRows(d.RestPositions).ToList(),
@@ -183,13 +202,19 @@ namespace OpenPhysicsHKX
                     {"bend_normal", def.BendNormal}, {"bend_scale", def.BendScale},
                     {"bend_max_gain", def.BendMaxGain}, {"bend_scalar", "grad"}, {"bend_nat_scale", false},
                     {"shape_type", def.Shape}, {"apply_normal", def.ApplyNormal},
-                    {"reference", new Func<int, int, double[]>((i, rv) => referenceBuffers[d.Id][rv])},
+                    {"reference", new Func<int, int, double[]>((i, rv) => referenceSets[d.Id][def.ReferenceBufferId].Positions[rv])},
                     {"normal_bounds", "native"}
                 };
-                Func<int, double[]> normals = i => normalBuffers[d.Id] == null ? null : normalBuffers[d.Id][i];
+                Func<int, double[]> normals = i => def.NormalReferenceVertices!=null&&def.NormalReferenceVertices[i]>=0?referenceSets[d.Id][def.ReferenceBufferId].Normals[def.NormalReferenceVertices[i]]:normalBuffers[d.Id] == null ? null : normalBuffers[d.Id][i];
                 var solve = Solvers.BuildSolver(def.ClassName, fields, records, c, normals, opts);
+                if (options.RespectFixedStretchAnchors && options.StretchForm == "a3c" && def.ClassName == "hclStretchLinkConstraintSet")
+                {
+                    var anchorOptions = new Dictionary<string, object>(opts);
+                    anchorOptions["stretch_scale"] = options.StretchScale ?? options.LinkScale;
+                    solve = FixedAnchorStretch.Build(def, c, anchorOptions);
+                }
                 if (solve == null && options.AllowApproximateConstraints)
-                    solve = ApproximateKernels.Build(def, c, i => referenceBuffers[d.Id][i], approximationClock);
+                    solve = ApproximateKernels.Build(def, c, i => referenceSets[d.Id][def.ReferenceBufferId].Positions[i], approximationClock);
                 if (solve == null) throw new NotSupportedException("Unsupported constraint: " + def.ClassName);
                 c.Sets.Add(new SetRec { Class = def.ClassName, Fields = fields, Entries = records,
                     Type = TypeId(def.ClassName), N = records.Count, ProbeIndex = c.Sets.Count, Solve = solve });
@@ -208,6 +233,7 @@ namespace OpenPhysicsHKX
                 case "hclCompressibleLinkConstraintSet": return 20;
                 case "hclBendLinkConstraintSet": return 3;
                 case "hclTransitionConstraintSet": return 8;
+                case "hclVolumeConstraintMx": return 7; // generic stiffness adaptation for the independent approximation
                 default: throw new NotSupportedException("Unsupported constraint: " + name);
             }
         }
@@ -215,6 +241,8 @@ namespace OpenPhysicsHKX
         private static string[] Required(string name)
         {
             TypeId(name);
+            if (name == "hclVolumeConstraintMx")
+                return new[] { "particleIndex", "frameX", "frameY", "frameZ", "weight", "stiffness", "role" };
             if (name == "hclBendLinkConstraintSet")
                 return new[] { "particleA", "particleB", "bendMinLength", "stretchMaxLength", "bendStiffness", "stretchStiffness" };
             if (name == "hclTransitionConstraintSet")
@@ -235,6 +263,9 @@ namespace OpenPhysicsHKX
             if (d.Positions != null) ValidateRows(d.Positions, n, 3, "Positions");
             if (d.PreviousPositions != null) ValidateRows(d.PreviousPositions, n, 3, "PreviousPositions");
             if (d.ReferencePositions != null) ValidateRows(d.ReferencePositions, d.ReferencePositions.Length, 3, "ReferencePositions");
+            var referenceData=d.ReferenceBuffers==null?new Dictionary<int,ReferenceBufferData>():CopyReferenceBuffers(d.ReferenceBuffers);
+            if(referenceData.ContainsKey(0)&&d.ReferencePositions!=null)throw new ArgumentException("ReferencePositions and ReferenceBuffers[0] conflict.");
+            if(!referenceData.ContainsKey(0))referenceData.Add(0,new ReferenceBufferData{Positions=CopyRows(d.ReferencePositions??d.RestPositions)});
             if (d.ParticleNormals != null) ValidateRows(d.ParticleNormals, n, 3, "ParticleNormals");
             if (d.Masses == null || d.InverseMasses == null || d.Masses.Length != n || d.InverseMasses.Length != n)
                 throw new ArgumentException("Masses and InverseMasses must match particle count.");
@@ -257,10 +288,24 @@ namespace OpenPhysicsHKX
                     set.Fields.Distinct().Count() != set.Fields.Length || required.Any(f => !set.Fields.Contains(f)))
                     throw new ArgumentException("Missing or duplicate constraint fields: " + set.ClassName);
                 ValidateRows(set.Records, set.Records.Length, set.Fields.Length, "constraint records");
+                ReferenceBufferData reference;
+                if(set.ReferenceBufferId<0||!referenceData.TryGetValue(set.ReferenceBufferId,out reference))throw new ArgumentException("Constraint references an undeclared buffer.");
+                if(set.NormalReferenceVertices!=null&&(set.NormalReferenceVertices.Length!=n||reference.Normals==null||set.NormalReferenceVertices.Any(i=>i< -1||i>=reference.Positions.Length)))throw new ArgumentException("Invalid per-constraint reference normal mapping.");
+                if(set.ClassName=="hclVolumeConstraintMx"&&set.Records.Length>0)
+                {
+                    // The approximation accesses a contiguous XYZ triple; reject reordered triples.
+                    int x=Array.IndexOf(set.Fields,"frameX");
+                    if(Array.IndexOf(set.Fields,"frameY")!=x+1||Array.IndexOf(set.Fields,"frameZ")!=x+2)throw new ArgumentException("Volume frame XYZ columns must be contiguous.");
+                    int role=Array.IndexOf(set.Fields,"role"),weight=Array.IndexOf(set.Fields,"weight"),stiffness=Array.IndexOf(set.Fields,"stiffness");
+                    if(set.Records.Any(r=>(r[role]!=0&&r[role]!=1)||r[weight]<0||r[stiffness]<0||r[stiffness]>1))throw new ArgumentException("Invalid Volume role/weight/stiffness.");
+                    double sum=set.Records.Where(r=>r[role]==0).Sum(r=>r[weight]);
+                    if(double.IsNaN(sum)||double.IsInfinity(sum)||sum<=0||!set.Records.Any(r=>r[role]==1))throw new ArgumentException("Volume requires positive frame weight and apply records.");
+                    foreach(int r in new[]{0,1})if(set.Records.Where(row=>row[role]==r).Select(row=>row[Array.IndexOf(set.Fields,"particleIndex")]).Distinct().Count()!=set.Records.Count(row=>row[role]==r))throw new ArgumentException("Duplicate Volume particle within frame/apply records.");
+                }
                 for (int j = 0; j < set.Fields.Length; j++)
                     if (new[] { "particleA", "particleB", "particleC", "particleD", "particleIndex", "referenceVertex" }.Contains(set.Fields[j]))
                         foreach (var r in set.Records)
-                            if (r[j] < 0 || r[j] >= (set.Fields[j] == "referenceVertex" && d.ReferencePositions != null ? d.ReferencePositions.Length : n) || r[j] != Math.Truncate(r[j])) throw new ArgumentException("Invalid particle/reference index.");
+                            if (r[j] < 0 || r[j] >= (set.Fields[j] == "referenceVertex" ? reference.Positions.Length : n) || r[j] != Math.Truncate(r[j])) throw new ArgumentException("Invalid particle/reference index.");
                 if (set.ClassName == "hclBendLinkConstraintSet")
                     foreach (var r in set.Records)
                     {
@@ -282,16 +327,18 @@ namespace OpenPhysicsHKX
                     Records = CopyRows(set.Records), Shape = set.Shape, ApplyNormal = set.ApplyNormal,
                     BendScale = set.BendScale, BendMaxGain = set.BendMaxGain, BendNormal = set.BendNormal,
                     ToSimulationPeriod = set.ToSimulationPeriod, ToAnimationPeriod = set.ToAnimationPeriod,
-                    TransitionToAnimation = set.TransitionToAnimation });
+                    TransitionToAnimation = set.TransitionToAnimation,ReferenceBufferId=set.ReferenceBufferId,
+                    NormalReferenceVertices=set.NormalReferenceVertices==null?null:(int[])set.NormalReferenceVertices.Clone() });
             }
-            if (d.ExecutionOrder != null && (d.ExecutionOrder.Length == 0 && defs.Count != 0 || d.ExecutionOrder.Any(i => i < 0 || i >= defs.Count)))
+            if (d.ExecutionOrder != null && (d.ExecutionOrder.Length == 0 && defs.Count != 0 && !d.AllowEmptyExecution || d.ExecutionOrder.Any(i => i < 0 || i >= defs.Count)))
                 throw new ArgumentException("Invalid execution order (empty cannot disable existing constraints).");
             return new ClothDefinition { Id = d.Id, Name = d.Name, RestPositions = CopyRows(d.RestPositions),
                 Positions = CopyRows(d.Positions), PreviousPositions = CopyRows(d.PreviousPositions), ReferencePositions = CopyRows(d.ReferencePositions),
+                ReferenceBuffers=d.ReferenceBuffers==null?null:CopyReferenceBuffers(d.ReferenceBuffers),
                 Masses = (double[])d.Masses.Clone(), InverseMasses = (double[])d.InverseMasses.Clone(),
                 Gravity = (double[])d.Gravity.Clone(), Damping = d.Damping, Substeps = d.Substeps,
                 Iterations = d.Iterations, AdaptConstraintStiffness = d.AdaptConstraintStiffness,
-                Constraints = defs.ToArray(), ExecutionOrder = d.ExecutionOrder == null ? null : (int[])d.ExecutionOrder.Clone(),
+                Constraints = defs.ToArray(), ExecutionOrder = d.ExecutionOrder == null ? null : (int[])d.ExecutionOrder.Clone(), AllowEmptyExecution = d.AllowEmptyExecution,
                 Capsules = CopyRows(d.Capsules), ParticleRadius = d.ParticleRadius,
                 CollisionTolerance = d.CollisionTolerance, ParticleNormals = CopyRows(d.ParticleNormals) };
         }
@@ -311,9 +358,21 @@ namespace OpenPhysicsHKX
             if (!allowed.Contains(value)) throw new ArgumentException("Unsupported option: " + (value ?? "null"));
         }
         private static double[][] CopyRows(double[][] rows) { return rows == null ? null : rows.Select(r => (double[])r.Clone()).ToArray(); }
+        private static Dictionary<int,ReferenceBufferData> CopyReferenceBuffers(Dictionary<int,ReferenceBufferData> buffers)
+        {
+            var result=new Dictionary<int,ReferenceBufferData>();
+            foreach(var pair in buffers)
+            {
+                if(pair.Key<0||pair.Value==null||pair.Value.Positions==null||pair.Value.Positions.Length==0)throw new ArgumentException("Invalid reference buffer declaration.");
+                ValidateRows(pair.Value.Positions,pair.Value.Positions.Length,3,"reference buffer");
+                if(pair.Value.Normals!=null)ValidateRows(pair.Value.Normals,pair.Value.Positions.Length,3,"reference normals");
+                result.Add(pair.Key,new ReferenceBufferData{Positions=CopyRows(pair.Value.Positions),Normals=CopyRows(pair.Value.Normals)});
+            }
+            return result;
+        }
         private static void ValidateRows(double[][] rows, int count, int width, string label)
         {
-            if (rows.Length != count || rows.Any(r => r == null || r.Length != width)) throw new ArgumentException("Invalid shape: " + label);
+            if (rows == null || rows.Length != count || rows.Any(r => r == null || r.Length != width)) throw new ArgumentException("Invalid shape: " + label);
             foreach (var row in rows) CheckFinite(row, label);
         }
         private static void CheckFinite(double[] values, string label)

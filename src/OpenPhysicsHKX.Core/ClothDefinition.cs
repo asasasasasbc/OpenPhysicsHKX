@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace OpenPhysicsHKX
 {
@@ -17,6 +18,8 @@ namespace OpenPhysicsHKX
         public double[][] PreviousPositions { get; set; }
         /// <summary>Optional explicit rest/reference buffer; referenceVertex indexes this array.</summary>
         public double[][] ReferencePositions { get; set; }
+        /// <summary>Optional independently indexed authored reference buffers. Buffer 0 aliases ReferencePositions.</summary>
+        public Dictionary<int, ReferenceBufferData> ReferenceBuffers { get; set; }
         public double[] Masses { get; set; }
         public double[] InverseMasses { get; set; }
         public double[] Gravity { get; set; }
@@ -27,6 +30,8 @@ namespace OpenPhysicsHKX
         public ConstraintDefinition[] Constraints { get; set; }
         /// <summary>Indices in Constraints, in execution order. Null means all; invalid indices are rejected.</summary>
         public int[] ExecutionOrder { get; set; }
+        /// <summary>Explicitly permit an authored inactive constraint schedule. Default false prevents accidental omission.</summary>
+        public bool AllowEmptyExecution { get; set; }
         /// <summary>Capsules as ax, ay, az, bx, by, bz, radiusA, radiusB. Already in solver space.</summary>
         public double[][] Capsules { get; set; }
         public double ParticleRadius { get; set; }
@@ -50,6 +55,9 @@ namespace OpenPhysicsHKX
         public double ToSimulationPeriod { get; set; }
         public double ToAnimationPeriod { get; set; }
         public bool TransitionToAnimation { get; set; }
+        public int ReferenceBufferId { get; set; }
+        /// <summary>Optional particle-to-reference-normal indices for this set; -1 uses the legacy particle-normal channel.</summary>
+        public int[] NormalReferenceVertices { get; set; }
     }
 
     public sealed class SolverOptions
@@ -66,13 +74,15 @@ namespace OpenPhysicsHKX
         public double GravityScale { get; set; }
         public bool PinFixed { get; set; }
         public bool EnableCollisions { get; set; }
-        /// <summary>Opt in to independently designed BendLink/Transition approximations, not HCT equivalence.</summary>
+        /// <summary>Opt in to independently designed BendLink/Transition/VolumeMx approximations, not HCT equivalence.</summary>
         public bool AllowApproximateConstraints { get; set; }
         /// <summary>raw, normalized, mass. Explicit: game presets belong to the compatibility CLI.</summary>
         public string LinkForm { get; set; }
         public double LinkScale { get; set; }
         public double? StretchScale { get; set; }
         public string StretchForm { get; set; }
+        /// <summary>Correct A-only stretch records with one fixed endpoint by moving the dynamic endpoint. Default false retains legacy arithmetic.</summary>
+        public bool RespectFixedStretchAnchors { get; set; }
         public string StretchSign { get; set; }
         public string CompressMode { get; set; }
         public string CollisionToleranceMode { get; set; }

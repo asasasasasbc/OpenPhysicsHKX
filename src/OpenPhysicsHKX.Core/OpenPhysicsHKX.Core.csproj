@@ -18,8 +18,11 @@
     <Compile Include="AssemblyInfo.cs" />
     <Compile Include="ClothDefinition.cs" />
     <Compile Include="ClothFrameInput.cs" />
+    <Compile Include="ReferenceBufferData.cs" />
     <Compile Include="ClothSession.cs" />
+    <Compile Include="FixedAnchorStretch.cs" />
     <Compile Include="ApproximateKernels.cs" />
+    <Compile Include="VolumeShapeMatching.cs" />
     <Compile Include="Imported\LegacyKernels.cs" />
     <Compile Include="Imported\PyNum.cs" />
   </ItemGroup>

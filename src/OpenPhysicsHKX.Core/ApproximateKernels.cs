@@ -12,10 +12,11 @@ namespace OpenPhysicsHKX.Internal
     {
         internal static bool IsApproximate(string name)
         {
-            return name == "hclBendLinkConstraintSet" || name == "hclTransitionConstraintSet";
+            return name == "hclBendLinkConstraintSet" || name == "hclTransitionConstraintSet" || name == "hclVolumeConstraintMx";
         }
         internal static Action<double> Build(ConstraintDefinition def, Cloth c, Func<int,double[]> reference, ApproximationClock clock)
         {
+            if(def.ClassName=="hclVolumeConstraintMx")return VolumeShapeMatching.Build(def,c);
             Func<string, int> col = name => Array.IndexOf(def.Fields, name);
             if (def.ClassName == "hclBendLinkConstraintSet")
             {

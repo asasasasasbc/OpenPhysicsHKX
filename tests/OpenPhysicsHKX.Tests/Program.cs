@@ -124,9 +124,121 @@ internal static class Program
             Check(!coreRefs.Contains("System.Web.Extensions") && !coreRefs.Contains("System.Windows.Forms"), "Core has no JSON serializer or GUI dependency");
             ApproximationChecks();
             FrameInputChecks();
+            VolumeTests();
+            MultiReferenceTests();
+            FixedStretchTests();
             Console.WriteLine("ALL PASS: " + passed); return 0;
         }
         catch (Exception e) { Console.Error.WriteLine(e); return 1; }
+    }
+    private static void FixedStretchTests()
+    {
+        Func<bool, double, ClothDefinition> scene = (reverse, stiffness) => new ClothDefinition {
+            Id = 7, RestPositions = new[] { new[] { 0.0, 0.0, 0.0 }, new[] { 2.0, 0.0, 0.0 } },
+            Masses = new[] { 0.0, 0.25 }, InverseMasses = new[] { 0.0, 4.0 },
+            Gravity = new[] { 0.0, 0.0, 0.0 }, Substeps = 1, Iterations = 1,
+            Constraints = new[] { new ConstraintDefinition {
+                ClassName = "hclStretchLinkConstraintSet", Fields = new[] { "particleA", "particleB", "restLength", "stiffness" },
+                Records = new[] { new[] { reverse ? 1.0 : 0.0, reverse ? 0.0 : 1.0, 1.0, stiffness } }
+            } }
+        };
+        var opts = new SolverOptions { RespectFixedStretchAnchors = true };
+        foreach (bool reverse in new[] { false, true })
+        {
+            var s = new ClothSession(new[] { scene(reverse, 1) }, opts); s.Step();
+            Check(s.GetPositions()[7][0][0] == 0 && s.GetPositions()[7][1][0] == 1,
+                "fixed stretch moves only dynamic endpoint, anchor " + (reverse ? "B" : "A"));
+        }
+        var legacy = new ClothSession(new[] { scene(false, 1) }); legacy.Step();
+        Check(legacy.GetPositions()[7][1][0] == 2, "legacy stretch default remains unchanged for compatibility");
+        var soft = new ClothSession(new[] { scene(false, 0.25) }, opts); soft.Step();
+        Check(soft.GetPositions()[7][1][0] == 1.75, "fixed stretch retains authored stiffness without inverse-mass multiplication");
+        var scaled = new ClothSession(new[] { scene(false, 0.25) }, new SolverOptions { RespectFixedStretchAnchors = true, StretchScale = 0.5 }); scaled.Step();
+        Check(scaled.GetPositions()[7][1][0] == 1.875, "fixed stretch honors explicit stretch scale");
+        var slackDef = scene(false, 1); slackDef.RestPositions[1][0] = 0.5;
+        var slack = new ClothSession(new[] { slackDef }, opts); slack.Step();
+        Check(slack.GetPositions()[7][1][0] == 0.5, "one-sided anchor stretch leaves slack unchanged");
+        var twoSided = new ClothSession(new[] { slackDef }, new SolverOptions { RespectFixedStretchAnchors = true, StretchSign = "twosided" }); twoSided.Step();
+        Check(twoSided.GetPositions()[7][1][0] == 1, "explicit two-sided anchor stretch retains compression behavior");
+        var fixedDef = scene(false, 1); fixedDef.Masses[1] = fixedDef.InverseMasses[1] = 0;
+        var fixedPair = new ClothSession(new[] { fixedDef }, opts); fixedPair.Step();
+        Check(fixedPair.GetPositions()[7][1][0] == 2, "two fixed stretch endpoints are never moved");
+        var dynamicDef = scene(false, 0.1); dynamicDef.Masses[0] = 0.5; dynamicDef.InverseMasses[0] = 2;
+        var dynamicOld = new ClothSession(new[] { dynamicDef }); var dynamicNew = new ClothSession(new[] { dynamicDef }, opts);
+        dynamicOld.Step(20); dynamicNew.Step(20);
+        Check(Bits(dynamicOld.GetPositions()[7], dynamicNew.GetPositions()[7]), "dynamic-dynamic stretch retains legacy arithmetic bit-for-bit");
+        var batch = new ClothSession(new[] { scene(false, 0.5) }, opts); var single = new ClothSession(new[] { scene(false, 0.5) }, opts);
+        batch.Step(60); for (int i = 0; i < 60; i++) single.Step();
+        Check(Bits(batch.GetPositions()[7], single.GetPositions()[7]), "corrected stretch batch/single determinism");
+        var end = batch.GetPositions()[7]; batch.Reset(); batch.Step(60);
+        Check(Bits(end, batch.GetPositions()[7]), "corrected stretch reset determinism");
+        var moved = new ClothSession(new[] { scene(false, 1) }, opts);
+        moved.SetFrameInputs(new[] { new ClothFrameInput { ClothId = 7, FixedTargets = new Dictionary<int,double[]> { { 0, new[] { 0.0, 1.0, 0.0 } } } } }); moved.Step();
+        var points = moved.GetPositions()[7]; double distance = Math.Sqrt(points[1].Zip(points[0], (a,b) => (a-b)*(a-b)).Sum());
+        Check(Math.Abs(distance-1) < 1e-12 && points[0][1] == 1, "corrected stretch uses current animated fixed target");
+        var internalCloth = new Cloth { N = 2, P = new List<double[]> { new[] { 0.0,0.0,0.0 }, new[] { 2.0,0.0,0.0 } }, InvMass = new List<double> { 0,4 } };
+        FixedAnchorStretch.Build(scene(false,1).Constraints[0], internalCloth,
+            new Dictionary<string,object> { { "stretch_scale",1.0 }, { "stretch_sign","onesided" } })(1);
+        Check(internalCloth.P[0][0] == 0 && internalCloth.P[1][0] == 1,
+            "anchor remains fixed inside solver, not merely re-pinned afterward");
+    }
+
+    private static void MultiReferenceTests()
+    {
+        Func<ClothDefinition> make=()=>new ClothDefinition{
+            Id=11,RestPositions=new[]{new[]{0.0,0.0,0.0},new[]{0.0,0.0,0.0}},Masses=new[]{1.0,1.0},InverseMasses=new[]{1.0,1.0},Gravity=new[]{0.0,0.0,0.0},Damping=0,Substeps=1,Iterations=1,
+            ReferenceBuffers=new Dictionary<int,ReferenceBufferData>{{3,new ReferenceBufferData{Positions=new[]{new[]{1.0,0.0,0.0}}}},{7,new ReferenceBufferData{Positions=new[]{new[]{10.0,0.0,0.0}}}}},
+            Constraints=new[]{3,7}.Select((id,i)=>new ConstraintDefinition{ClassName="hclLocalRangeConstraintSet",ReferenceBufferId=id,ApplyNormal=false,Fields=new[]{"particleIndex","referenceVertex","maximumDistance","maxNormalDistance","minNormalDistance"},Records=new[]{new[]{(double)i,0.0,0.0,0.0,0.0}}}).ToArray()};
+        var d=make();var s=new ClothSession(new[]{d});s.Step();var p=s.GetPositions()[11];
+        Check(Math.Abs(p[0][0]-1)<1e-6&&Math.Abs(p[1][0]-10)<1e-6,"two identical vertex indices read different declared reference buffers");
+        d.ReferenceBuffers[7].Positions[0][0]=999;s.Reset();s.Step();Check(Math.Abs(s.GetPositions()[11][1][0]-10)<1e-6,"reference-buffer declarations are owned copies");
+        var update=new ReferenceBufferData{Positions=new[]{new[]{20.0,0.0,0.0}}};s.SetFrameInputs(new[]{new ClothFrameInput{ClothId=11,ReferenceBuffers=new Dictionary<int,ReferenceBufferData>{{7,update}}}});update.Positions[0][0]=999;s.Step();
+        Check(Math.Abs(s.GetPositions()[11][1][0]-20)<1e-6&&Math.Abs(s.GetPositions()[11][0][0]-1)<1e-6,"live buffer update is copied and does not alter other buffer IDs");
+        Reject<ArgumentException>(()=>s.SetFrameInputs(new[]{new ClothFrameInput{ClothId=11,ReferenceBuffers=new Dictionary<int,ReferenceBufferData>{{3,new ReferenceBufferData{Positions=new[]{new[]{30.0,0.0,0.0}}}},{7,new ReferenceBufferData{Positions=new[]{new[]{4.0,0.0,0.0},new[]{5.0,0.0,0.0}}}}}}}),"invalid second buffer rejects an entire multi-buffer input batch");
+        s.Step();Check(Math.Abs(s.GetPositions()[11][0][0]-1)<1e-6&&Math.Abs(s.GetPositions()[11][1][0]-20)<1e-6,"failed multi-buffer update leaves every reference buffer unchanged");
+        Reject<ArgumentException>(()=>s.SetFrameInputs(new[]{new ClothFrameInput{ClothId=11,ReferenceBuffers=new Dictionary<int,ReferenceBufferData>{{99,new ReferenceBufferData{Positions=new[]{new[]{0.0,0.0,0.0}}}}}}}),"unknown live reference buffer ID rejected");
+        s.Reset();s.Step();Check(Math.Abs(s.GetPositions()[11][1][0]-10)<1e-6,"Reset restores each declared reference buffer independently");
+        var bad=make();bad.Constraints[0].ReferenceBufferId=99;Reject<ArgumentException>(()=>new ClothSession(new[]{bad}),"undeclared constraint reference buffer rejected");
+        bad=make();bad.Constraints[0].Records[0][1]=1;Reject<ArgumentException>(()=>new ClothSession(new[]{bad}),"reference bounds use selected buffer size, not particle count");
+        var normals=make();normals.Positions=new[]{new[]{3.0,4.0,5.0},new[]{3.0,4.0,5.0}};normals.PreviousPositions=normals.Positions.Select(a=>(double[])a.Clone()).ToArray();
+        normals.ReferenceBuffers[3]=new ReferenceBufferData{Positions=new[]{new[]{0.0,0.0,0.0}},Normals=new[]{new[]{0.0,1.0,0.0}}};normals.ReferenceBuffers[7]=new ReferenceBufferData{Positions=new[]{new[]{0.0,0.0,0.0}},Normals=new[]{new[]{1.0,0.0,0.0}}};
+        for(int i=0;i<2;i++){normals.Constraints[i].ApplyNormal=true;normals.Constraints[i].Records[0][2]=100;normals.Constraints[i].NormalReferenceVertices=new[]{i==0?0:-1,i==1?0:-1};}
+        var ns=new ClothSession(new[]{normals});ns.Step();p=ns.GetPositions()[11];Check(Math.Abs(p[0][1])<1e-6&&Math.Abs(p[1][0])<1e-6&&p[0][0]>2&&p[1][1]>3,"LocalRange normal channels are selected independently per constraint buffer");
+        Reject<ArgumentException>(()=>ns.SetFrameInputs(new[]{new ClothFrameInput{ClothId=11,ReferenceBuffers=new Dictionary<int,ReferenceBufferData>{{3,new ReferenceBufferData{Positions=new[]{new[]{0.0,0.0,0.0}},Normals=new[]{new[]{double.NaN,0.0,0.0}}}}}}}),"nonfinite live reference normals rejected atomically");
+        var liveNormals=new ReferenceBufferData{Positions=new[]{new[]{0.0,0.0,0.0}},Normals=new[]{new[]{0.0,0.0,1.0}}};
+        ns.SetFrameInputs(new[]{new ClothFrameInput{ClothId=11,ReferenceBuffers=new Dictionary<int,ReferenceBufferData>{{3,liveNormals}}}});ns.Step();
+        Check(Math.Abs(ns.GetPositions()[11][0][2])<1e-6,"LocalRange reads live per-buffer normals, not a cached particle normal");
+        bad=make();bad.ReferencePositions=new[]{new[]{0.0,0.0,0.0}};bad.ReferenceBuffers[0]=new ReferenceBufferData{Positions=new[]{new[]{1.0,0.0,0.0}}};Reject<ArgumentException>(()=>new ClothSession(new[]{bad}),"ambiguous legacy/default-buffer declarations rejected");
+    }
+    private static void VolumeTests()
+    {
+        Func<ClothDefinition> make=()=>{
+            var points=new[]{new[]{1.0,1.0,1.0},new[]{-1.0,-1.0,1.0},new[]{-1.0,1.0,-1.0},new[]{1.0,-1.0,-1.0}};
+            var rows=Enumerable.Range(0,4).SelectMany(i=>new[]{new[]{(double)i,points[i][0],points[i][1],points[i][2],.25,0.0,0.0},new[]{(double)i,points[i][0],points[i][1],points[i][2],0.0,1.0,1.0}}).ToArray();
+            return new ClothDefinition{Id=1,RestPositions=points,Positions=points.Select(p=>(double[])p.Clone()).ToArray(),PreviousPositions=points.Select(p=>(double[])p.Clone()).ToArray(),Masses=new[]{1.0,1.0,1.0,1.0},InverseMasses=new[]{1.0,1.0,1.0,1.0},Gravity=new[]{0.0,0.0,0.0},Damping=0,Substeps=1,Iterations=1,Constraints=new[]{new ConstraintDefinition{ClassName="hclVolumeConstraintMx",Fields=new[]{"particleIndex","frameX","frameY","frameZ","weight","stiffness","role"},Records=rows}}};
+        };
+        Func<ClothDefinition,ClothSession> solve=d=>new ClothSession(new[]{d},new SolverOptions{AllowApproximateConstraints=true,EnableCollisions=false});
+        Reject<NotSupportedException>(()=>new ClothSession(new[]{make()}),"VolumeMx requires explicit approximation opt-in");
+        var rest=make();var s=solve(rest);s.Step();
+        Check(s.GetPositions()[1].Zip(rest.RestPositions,(a,b)=>a.Zip(b,(u,v)=>Math.Abs(u-v)<1e-10).All(z=>z)).All(z=>z),"VolumeMx preserves its authored shape");
+        foreach(double angle in new[]{Math.PI/2,Math.PI})
+        {
+            var d=make();d.Positions=d.RestPositions.Select(p=>new[]{3+Math.Cos(angle)*p[0]-Math.Sin(angle)*p[1],4+Math.Sin(angle)*p[0]+Math.Cos(angle)*p[1],5+p[2]}).ToArray();d.PreviousPositions=d.Positions.Select(p=>(double[])p.Clone()).ToArray();var target=d.Positions;var session=solve(d);session.Step();
+            Check(session.GetPositions()[1].Zip(target,(a,b)=>a.Zip(b,(u,v)=>Math.Abs(u-v)<1e-9).All(z=>z)).All(z=>z),"VolumeMx is translation/rotation equivariant at "+angle);
+        }
+        var stretched=make();stretched.Positions=stretched.RestPositions.Select(p=>p.Select(x=>x*2).ToArray()).ToArray();stretched.PreviousPositions=stretched.Positions.Select(p=>(double[])p.Clone()).ToArray();var shrunk=solve(stretched);shrunk.Step();
+        Check(shrunk.GetPositions()[1].Zip(stretched.RestPositions,(a,b)=>a.Zip(b,(u,v)=>Math.Abs(u-v)<1e-9).All(z=>z)).All(z=>z),"VolumeMx actively restores uniformly distorted shape");
+        var fixedScene=make();fixedScene.InverseMasses[0]=0;fixedScene.Masses[0]=0;fixedScene.Positions[1][0]+=1;fixedScene.PreviousPositions=fixedScene.Positions.Select(p=>(double[])p.Clone()).ToArray();var fixedSession=solve(fixedScene);fixedSession.Step(10);
+        Check(Bits(new[]{fixedSession.GetPositions()[1][0]},new[]{fixedScene.RestPositions[0]}),"VolumeMx leaves authored fixed particles pinned");
+        var first=solve(make());var second=solve(make());first.Step(12);for(int i=0;i<12;i++)second.Step();Check(Bits(first.GetPositions()[1],second.GetPositions()[1]),"VolumeMx batch/single step parity");
+        var end=first.GetPositions()[1];first.Reset();first.Step(12);Check(Bits(end,first.GetPositions()[1]),"VolumeMx Reset is deterministic");
+        Check(first.ApproximateConstraintClasses.Contains("hclVolumeConstraintMx"),"VolumeMx is reported as an approximation, not omitted");
+        var bad=make();bad.Constraints[0].Records[0][4]=0;bad.Constraints[0].Records[2][4]=0;bad.Constraints[0].Records[4][4]=0;bad.Constraints[0].Records[6][4]=0;Reject<ArgumentException>(()=>solve(bad),"zero-weight Volume frame rejected");
+        bad=make();bad.Constraints[0].Records[0][6]=2;Reject<ArgumentException>(()=>solve(bad),"unknown Volume record role rejected");
+        bad=make();bad.Constraints[0].Records[0][0]=99;Reject<ArgumentException>(()=>solve(bad),"invalid Volume particle rejected");
+        var inactive=Scene();inactive.ExecutionOrder=new int[0];Reject<ArgumentException>(()=>new ClothSession(new[]{inactive}),"empty schedule still refuses accidental constraint omission");
+        inactive.AllowEmptyExecution=true;var permitted=new ClothSession(new[]{inactive});permitted.Step();Check(permitted.FrameCount==1,"explicit authored inactive constraint schedule accepted");
+        var empty=make();empty.Constraints[0].Records=new double[0][];var emptySession=solve(empty);emptySession.Step();Check(Bits(emptySession.GetPositions()[1],empty.RestPositions),"authored empty Volume set retains a harmless execution slot");
     }
     private static void KernelSmoke(string name, string[] fields, double[] record)
     {
